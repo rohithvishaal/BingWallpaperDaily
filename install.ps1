@@ -2,7 +2,7 @@ $dest = Join-Path$env:USERPROFILE "Pictures\wallpapers"
 if (-not (Test-Path $dest)) { New-Item -ItemType Directory -Path$dest -Force | Out-Null }
 
 # Download script directly from your repo
-$rawScriptUrl = "https://raw.githubusercontent.com/rohithvishaal/BingWallpaperDaily/main/Update-Wallpaper.ps1"
+$rawScriptUrl = "https://raw.githubusercontent.com/rohithvishaal/BingWallpaperDaily/refs/heads/master/Update-Wallpaper.ps1"
 Invoke-WebRequest -Uri $rawScriptUrl -OutFile "$dest\Update-Wallpaper.ps1"
 
 # Register the Scheduled Task
