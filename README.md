@@ -5,7 +5,7 @@ An automated PowerShell utility that downloads Microsoft Bing's daily wallpaper 
 ---
 ## Install (open powershel and paste this command)
 ```ps1
-irm https://raw.githubusercontent.com/rohithvishaal/BingWallpaperDaily/main/Update-Wallpaper.ps1 | iex
+irm https://raw.githubusercontent.com/rohithvishaal/BingWallpaperDaily/refs/heads/master/install.ps1 | iex
 ```
 ## Features
 
