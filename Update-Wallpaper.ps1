@@ -1,12 +1,15 @@
-﻿$today        = (Get-Date).ToString("yyyy-MM-dd")
+$ErrorActionPreference = 'Stop'
+
+$today        = (Get-Date).ToString("yyyy-MM-dd")
 $targetFolder = Join-Path $env:USERPROFILE "Pictures\wallpapers"
 $targetFile   = Join-Path $targetFolder "bing_$today.jpg"
+$tempFile     = "$targetFile.part"
 
 if (-not (Test-Path $targetFolder)) {
     New-Item -ItemType Directory -Path $targetFolder -Force | Out-Null
 }
 
-# 1. Guard: If today's wallpaper already exists, ignore and exit immediately
+# 1. Guard: If today's wallpaper already exists, exit immediately
 if (Test-Path $targetFile) {
     exit 0
 }
@@ -25,30 +28,43 @@ for ($i = 0; $i -lt 6; $i++) {
 
 if (-not $online) { exit 1 }
 
-# 3. Fetch today's official Bing UHD (4K - 3840x2160) wallpaper URL
-$api = "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&mkt=en-US"
-$response = Invoke-RestMethod -Uri $api
-$imgUrl = "https://www.bing.com" + $response.images[0].urlbase + "_UHD.jpg"
+try {
+    # 3. Fetch today's Bing image base URL
+    $api = "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&mkt=en-US"
+    $response = Invoke-RestMethod -Uri $api -UseBasicParsing
+    $urlBase  = $response.images[0].urlbase
 
-# 4. Download wallpaper
-Invoke-WebRequest -Uri $imgUrl -OutFile $targetFile
+    # 4. Download to a temp file first so a failed/partial download
+    #    never trips the once-per-day guard. Try 4K, fall back to 1080p.
+    try {
+        Invoke-WebRequest -Uri "https://www.bing.com${urlBase}_UHD.jpg" -OutFile $tempFile -UseBasicParsing
+    } catch {
+        Invoke-WebRequest -Uri "https://www.bing.com${urlBase}_1920x1080.jpg" -OutFile $tempFile -UseBasicParsing
+    }
+    Move-Item -Path $tempFile -Destination $targetFile -Force
+} catch {
+    if (Test-Path $tempFile) { Remove-Item $tempFile -Force -ErrorAction SilentlyContinue }
+    exit 1
+}
 
-# 5. Set wallpaper scaling to "Fill" (WallpaperStyle = 10, TileWallpaper = 0)
-Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name WallpaperStyle -Value 10
-Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name TileWallpaper -Value 0
+# 5. Set wallpaper scaling to "Fill" (these values are REG_SZ strings)
+$desktopKey = "HKCU:\Control Panel\Desktop"
+Set-ItemProperty -Path $desktopKey -Name WallpaperStyle -Value "10" -Type String
+Set-ItemProperty -Path $desktopKey -Name TileWallpaper  -Value "0"  -Type String
 
 # 6. Apply as desktop background
 if (-not ([System.Management.Automation.PSTypeName]'Wallpaper').Type) {
     Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public class Wallpaper { [DllImport("user32.dll", CharSet = CharSet.Auto)] public static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni); }'
 }
-[Wallpaper]::SystemParametersInfo(0x0014, 0, $targetFile, 0x01 -bor 0x02)
+[void][Wallpaper]::SystemParametersInfo(0x0014, 0, $targetFile, 0x01 -bor 0x02)
 
 # 7. Trigger Windows Toast Notification
 try {
     [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
     [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
 
-    $xmlString = "<toast><visual><binding template='ToastGeneric'><text>Bing Wallpaper Updated</text><text>Saved to: $targetFile</text></binding></visual></toast>"
+    $safePath  = [System.Security.SecurityElement]::Escape($targetFile)
+    $xmlString = "<toast><visual><binding template='ToastGeneric'><text>Bing Wallpaper Updated</text><text>Saved to: $safePath</text></binding></visual></toast>"
     $xmlDoc = New-Object Windows.Data.Xml.Dom.XmlDocument
     $xmlDoc.LoadXml($xmlString)
     $toast = [Windows.UI.Notifications.ToastNotification]::new($xmlDoc)
